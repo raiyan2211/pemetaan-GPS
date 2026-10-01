@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sistem Pemetaan Poligon GPS - Google Earth Integration</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Turf.js for GIS calculations -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            touch-action: manipulation;
+        }
+        #map {
+            height: 100vh;
+            width: 100vw;
+            z-index: 1;
+        }
+        .leaflet-touch .leaflet-bar {
+            border: none !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+        }
+        /* Glassmorphic UI overlays */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .glass-dark {
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-800 overflow-hidden select-none">
+
+    <!-- Leaflet Map Container -->
+    <div id="map"></div>
+
+    <!-- Top Header Bar with Search -->
+    <div class="fixed top-3 left-3 right-3 z-20 flex flex-col sm:flex-row gap-2 justify-between items-stretch max-w-5xl mx-auto">
+        <div class="glass-panel px-3.5 py-2 rounded-2xl shadow-lg flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+                <div class="bg-blue-600 text-white p-2 rounded-xl flex items-center justify-center shadow-md shrink-0">
+                    <i class="fa-solid fa-earth-americas text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-xs sm:text-sm font-bold text-slate-800 leading-tight">Google Earth Mapper 3D</h1>
+                    <p id="gps-status-text" class="text-[10px] sm:text-xs text-slate-500 font-medium flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full bg-amber-500 inline-block animate-pulse"></span>
+                        Menunggu GPS...
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-1">
+                <!-- Basemap Switcher Dropdown -->
+                <button onclick="toggleBasemapModal()" class="glass-panel p-2 rounded-xl text-slate-700 hover:bg-white active:scale-95 transition-all text-xs font-semibold flex items-center gap-1" title="Pilih Mode Satelit / Peta">
+                    <i class="fa-solid fa-layer-group text-blue-600"></i>
+                    <span class="hidden sm:inline">Peta</span>
+                </button>
+                
+                <!-- Sidebar Toggle Button -->
+                <button onclick="toggleSidebar()" class="glass-panel p-2 rounded-xl text-slate-700 hover:bg-white active:scale-95 transition-all relative" title="Daftar Titik & Data">
+                    <i class="fa-solid fa-list-ol text-base"></i>
+                    <span id="point-badge" class="hidden absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-white">0</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Address / House Search Bar -->
+        <div class="glass-panel p-1.5 rounded-2xl shadow-lg flex items-center gap-2 border border-white/60">
+            <div class="relative flex-1 flex items-center">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 text-slate-400 text-xs"></i>
+                <input type="text" id="search-input" onkeydown="handleSearchKey(event)" placeholder="Cari rumah, jalan, atau lokasi lahan..." class="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50/80 focus:bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800">
+            </div>
+            <button onclick="searchLocation()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl font-semibold text-xs transition-all active:scale-95 flex items-center gap-1 shrink-0">
+                <span>Cari</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Statistics Widget & Direct 3D Google Earth Link -->
+    <div class="fixed top-28 sm:top-20 left-3 right-3 z-20 max-w-lg mx-auto">
+        <div class="glass-panel p-2.5 rounded-2xl shadow-lg border border-slate-200/50 flex flex-col gap-2">
+            <div class="grid grid-cols-3 gap-2 text-center">
+                <div class="bg-slate-50/80 p-1.5 sm:p-2 rounded-xl border border-slate-100">
+                    <p class="text-[9px] sm:text-[10px] uppercase tracking-wider font-semibold text-slate-400">Jumlah Titik</p>
+                    <p id="stat-points" class="text-xs sm:text-base font-bold text-slate-800">0</p>
+                </div>
+                <div class="bg-slate-50/80 p-1.5 sm:p-2 rounded-xl border border-slate-100">
+                    <p class="text-[9px] sm:text-[10px] uppercase tracking-wider font-semibold text-slate-400">Luas Lahan</p>
+                    <p id="stat-area" class="text-xs sm:text-base font-bold text-blue-600">0.00 Ha</p>
+                </div>
+                <div class="bg-slate-50/80 p-1.5 sm:p-2 rounded-xl border border-slate-100">
+                    <p class="text-[9px] sm:text-[10px] uppercase tracking-wider font-semibold text-slate-400">Keliling Area</p>
+                    <p id="stat-perimeter" class="text-xs sm:text-base font-bold text-slate-800">0.00 m</p>
+                </div>
+            </div>
+
+            <!-- Direct Launch Google Earth 3D Button -->
+            <button onclick="launchCurrentInGoogleEarth()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-98 text-white font-bold py-2 px-3 rounded-xl shadow flex items-center justify-center gap-2 text-xs transition-all">
+                <i class="fa-solid fa-cube text-amber-300 animate-bounce"></i>
+                <span>Lihat Lahan Ini di Google Earth 3D</span>
+                <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Floating Bottom Controls (Optimized for Mobile/HP) -->
+    <div class="fixed bottom-5 left-3 right-3 z-20 max-w-lg mx-auto flex flex-col gap-2">
+        <!-- Toast Notification Area -->
+        <div id="toast" class="hidden glass-dark text-white px-4 py-2 rounded-xl shadow-xl text-xs font-medium text-center transition-all">
+            Status Message
+        </div>
+
+        <div class="glass-panel p-2 rounded-2xl shadow-2xl flex items-center justify-between gap-2 border border-white/60">
+            <!-- Capture GPS Button -->
+            <button onclick="captureCurrentGPS()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold py-3 px-2 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all active:scale-95 text-xs sm:text-sm">
+                <i class="fa-solid fa-location-crosshairs text-base text-emerald-200"></i>
+                <span>Ambil Titik (HP)</span>
+            </button>
+
+            <!-- Export to KML (Google Earth) -->
+            <button onclick="openExportModal()" class="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold py-3 px-3 rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-95 text-xs sm:text-sm">
+                <i class="fa-solid fa-download text-base"></i>
+                <span>Ekspor KML</span>
+            </button>
+
+            <!-- Reset / Clear -->
+            <button onclick="clearAllPoints()" class="bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-600 p-3 rounded-xl transition-all active:scale-95" title="Hapus Semua Titik">
+                <i class="fa-solid fa-trash-can text-base"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Drawer / Sidebar Points List -->
+    <div id="sidebar" class="fixed inset-y-0 right-0 z-30 w-full sm:w-96 bg-white shadow-2xl transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+        <div class="p-4 bg-slate-900 text-white flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-earth-americas text-blue-400"></i>
+                <h2 class="font-bold text-sm">Daftar Titik Koordinat Poligon</h2>
+            </div>
+            <button onclick="toggleSidebar()" class="text-slate-400 hover:text-white p-1">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
+
+        <div class="p-3 bg-slate-100 border-b flex justify-between items-center text-xs text-slate-600">
+            <span id="point-count-text">0 titik terekam</span>
+            <button onclick="addManualPointPrompt()" class="text-blue-600 font-semibold hover:underline flex items-center gap-1">
+                <i class="fa-solid fa-plus-circle"></i> Input Koordinat Manual
+            </button>
+        </div>
+
+        <!-- Points List Container -->
+        <div id="points-container" class="flex-1 overflow-y-auto p-3 space-y-2">
+            <!-- Dynamic Content -->
+            <div id="empty-state" class="text-center py-12 text-slate-400">
+                <i class="fa-solid fa-map-pin text-3xl mb-2 opacity-40"></i>
+                <p class="text-xs">Belum ada titik koordinat.</p>
+                <p class="text-[11px] mt-1 text-slate-400">Gunakan tombol <b>"Ambil Titik (HP)"</b>, cari lokasi rumah, atau ketuk langsung di peta satelit.</p>
+            </div>
+        </div>
+
+        <div class="p-4 border-t bg-slate-50 flex gap-2">
+            <button onclick="openExportModal()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow">
+                <i class="fa-solid fa-file-code"></i> Unduh KML Google Earth
+            </button>
+            <button onclick="exportToGeoJSON()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1">
+                <i class="fa-solid fa-code"></i> GeoJSON
+            </button>
+        </div>
+    </div>
+
+    <!-- Basemap Switcher Modal -->
+    <div id="basemap-modal" class="hidden fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-layer-group text-blue-600"></i> Pilih Tampilan Peta
+                </h3>
+                <button onclick="toggleBasemapModal()" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+
+            <div class="space-y-2">
+                <button onclick="switchBasemap('googleHybrid')" class="w-full text-left p-3 rounded-2xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 flex items-center gap-3 transition-all">
+                    <div class="w-10 h-10 rounded-xl bg-slate-800 text-amber-400 flex items-center justify-center font-bold shrink-0">
+                        <i class="fa-solid fa-satellite text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="font-bold text-xs text-slate-800">Google Satellite Hybrid (Rekomendasi)</p>
+                        <p class="text-[10px] text-slate-500">Foto Satelit Google Asli + Nama Jalan & Gedung</p>
+                    </div>
+                </button>
+
+                <button onclick="switchBasemap('googleSatellite')" class="w-full text-left p-3 rounded-2xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 flex items-center gap-3 transition-all">
+                    <div class="w-10 h-10 rounded-xl bg-slate-700 text-emerald-400 flex items-center justify-center font-bold shrink-0">
+                        <i class="fa-solid fa-earth-asia text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="font-bold text-xs text-slate-800">Google Satellite Murni</p>
+                        <p class="text-[10px] text-slate-500">Foto Udara Murni Tanpa Label Jalan</p>
+                    </div>
+                </button>
+
+                <button onclick="switchBasemap('esriSatellite')" class="w-full text-left p-3 rounded-2xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 flex items-center gap-3 transition-all">
+                    <div class="w-10 h-10 rounded-xl bg-blue-900 text-blue-300 flex items-center justify-center font-bold shrink-0">
+                        <i class="fa-solid fa-globe text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="font-bold text-xs text-slate-800">Esri World Imagery HD</p>
+                        <p class="text-[10px] text-slate-500">Citra Satelit Resolusi Tinggi Esri</p>
+                    </div>
+                </button>
+
+                <button onclick="switchBasemap('openStreetMap')" class="w-full text-left p-3 rounded-2xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 flex items-center gap-3 transition-all">
+                    <div class="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold shrink-0">
+                        <i class="fa-solid fa-map text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="font-bold text-xs text-slate-800">Peta Jalan (OpenStreetMap)</p>
+                        <p class="text-[10px] text-slate-500">Tampilan Vektor Jalan Standard</p>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal Google Earth Settings -->
+    <div id="export-modal" class="hidden fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+            <div class="flex justify-between items-center mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="bg-blue-100 text-blue-600 p-2.5 rounded-2xl">
+                        <i class="fa-solid fa-earth-americas text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-base">Ekspor ke Google Earth</h3>
+                        <p class="text-xs text-slate-500">Atur atribut poligon sebelum mengunduh KML</p>
+                    </div>
+                </div>
+                <button onclick="closeExportModal()" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4 text-xs">
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Nama Lahan / Rumah / Bangunan</label>
+                    <input type="text" id="kml-name" value="Poligon Pemetaan Lahan" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 font-medium">
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Deskripsi / Catatan Tambahan</label>
+                    <textarea id="kml-desc" rows="2" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800" placeholder="Contoh: Batas pekarangan rumah & bangunan utama..."></textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Warna Garis</label>
+                        <input type="color" id="kml-line-color" value="#2563eb" class="w-full h-10 p-1 rounded-xl border border-slate-200 cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Warna Isian (Fill)</label>
+                        <input type="color" id="kml-fill-color" value="#3b82f6" class="w-full h-10 p-1 rounded-xl border border-slate-200 cursor-pointer">
+                    </div>
+                </div>
+
+                <div class="p-3 bg-blue-50 text-blue-800 rounded-xl flex gap-2 text-[11px] items-start">
+                    <i class="fa-solid fa-circle-info text-blue-600 text-sm mt-0.5"></i>
+                    <span>File KML ini dapat langsung dibuka di **Aplikasi Google Earth HP (Android/iOS)** maupun **Google Earth Pro di PC/Laptop**.</span>
+                </div>
+            </div>
+
+            <div class="mt-6 flex gap-2">
+                <button onclick="closeExportModal()" class="w-1/3 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50">Batal</button>
+                <button onclick="exportToKML()" class="w-2/3 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-download"></i> Unduh File KML
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global State Variables
+        let map;
+        let points = []; // Array of { id, number, lat, lng, alt, accuracy, time, source }
+        let markersGroup;
+        let polygonLayer;
+        let polylineLayer;
+        let userLocationMarker;
+        let watchPositionId = null;
+        let currentPosition = null;
+
+        // Tile Layers
+        let basemaps = {};
+        let currentBasemapLayer = null;
+
+        window.onload = function() {
+            initMap();
+            startGPSWatch();
+        };
+
+        function initMap() {
+            // Default center: Indonesia center (will auto zoom to user house/GPS when acquired)
+            map = L.map('map', {
+                zoomControl: false,
+                attributionControl: false
+            }).setView([-2.5489, 118.0149], 5);
+
+            // Google Satellite Hybrid (Satellite imagery + Roads & Buildings labels)
+            basemaps.googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                maxZoom: 21,
+                attribution: 'Google Maps Satellite'
+            });
+
+            // Google Satellite Pure
+            basemaps.googleSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                maxZoom: 21,
+                attribution: 'Google Maps'
+            });
+
+            // Esri Satellite HD
+            basemaps.esriSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: 'Esri Satellite'
+            });
+
+            // OpenStreetMap
+            basemaps.openStreetMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: 'OpenStreetMap'
+            });
+
+            // Set Google Satellite Hybrid as DEFAULT basemap
+            currentBasemapLayer = basemaps.googleHybrid;
+            currentBasemapLayer.addTo(map);
+
+            // Feature Groups for Map Elements
+            markersGroup = L.featureGroup().addTo(map);
+            polylineLayer = L.polyline([], { color: '#3b82f6', weight: 3, dashArray: '5, 10' }).addTo(map);
+            polygonLayer = L.polygon([], {
+                color: '#2563eb',
+                fillColor: '#3b82f6',
+                fillOpacity: 0.4,
+                weight: 3
+            }).addTo(map);
+
+            // Click event on map to manually drop point on exact house/yard location
+            map.on('click', function(e) {
+                addPoint(e.latlng.lat, e.latlng.lng, 0, null, 'Klik Peta Satelit');
+            });
+
+            // Zoom control repositioning
+            L.control.zoom({ position: 'bottomleft' }).addTo(map);
+        }
+
+        function toggleBasemapModal() {
+            const modal = document.getElementById('basemap-modal');
+            modal.classList.toggle('hidden');
+        }
+
+        function switchBasemap(key) {
+            if (basemaps[key]) {
+                if (currentBasemapLayer) {
+                    map.removeLayer(currentBasemapLayer);
+                }
+                currentBasemapLayer = basemaps[key];
+                currentBasemapLayer.addTo(map);
+                toggleBasemapModal();
+                showToast(`Tampilan peta diubah!`);
+            }
+        }
+
+        function handleSearchKey(event) {
+            if (event.key === 'Enter') {
+                searchLocation();
+            }
+        }
+
+        function searchLocation() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) {
+                showToast('Masukkan nama jalan, perumahan, atau kota.');
+                return;
+            }
+
+            showToast('Mencari alamat lokasi...');
+            
+            // Use Nominatim Geocoding API
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.length > 0) {
+                        const result = data[0];
+                        const lat = parseFloat(result.lat);
+                        const lng = parseFloat(result.lon);
+
+                        map.setView([lat, lng], 19); // Zoom close to house level (zoom 19)
+                        showToast(`Lokasi ditemukan: ${result.display_name.substring(0, 45)}...`);
+                    } else {
+                        showToast('Lokasi tidak ditemukan. Coba ketik nama jalan/kota secara lengkap.');
+                    }
+                })
+                .catch(err => {
+                    console.error('Search error:', err);
+                    showToast('Gagal mencari lokasi. Periksa koneksi internet.');
+                });
+        }
+
+        function startGPSWatch() {
+            const gpsText = document.getElementById('gps-status-text');
+
+            if (!('geolocation' in navigator)) {
+                gpsText.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span> GPS Tidak Didukung`;
+                showToast('Perangkat tidak mendukung geolokasi GPS.');
+                return;
+            }
+
+            watchPositionId = navigator.geolocation.watchPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const accuracy = Math.round(position.coords.accuracy);
+                    const alt = position.coords.altitude || 0;
+
+                    currentPosition = { lat, lng, alt, accuracy };
+
+                    // Update Status text
+                    gpsText.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-ping"></span> GPS Aktif (Akurasi: ±${accuracy}m)`;
+
+                    // Render or update live current position marker
+                    if (!userLocationMarker) {
+                        userLocationMarker = L.circleMarker([lat, lng], {
+                            radius: 8,
+                            fillColor: '#06b6d4',
+                            color: '#ffffff',
+                            weight: 3,
+                            opacity: 1,
+                            fillOpacity: 0.9
+                        }).addTo(map);
+                        
+                        // Center map on first GPS locate at high zoom
+                        map.setView([lat, lng], 19);
+                    } else {
+                        userLocationMarker.setLatLng([lat, lng]);
+                    }
+                },
+                (error) => {
+                    console.warn('GPS Warning:', error.message);
+                    gpsText.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500 inline-block"></span> Meminta Sinyal GPS...`;
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 1000,
+                    timeout: 10000
+                }
+            );
+        }
+
+        function captureCurrentGPS() {
+            if (!currentPosition) {
+                showToast('Mencari sinyal GPS presisi tinggi HP...');
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        const lat = pos.coords.latitude;
+                        const lng = pos.coords.longitude;
+                        const alt = pos.coords.altitude || 0;
+                        const accuracy = Math.round(pos.coords.accuracy);
+                        addPoint(lat, lng, alt, accuracy, 'GPS HP');
+                        map.setView([lat, lng], 19);
+                    },
+                    (err) => {
+                        showToast('Gagal mendapatkan GPS. Pastikan Lokasi HP aktif.');
+                    },
+                    { enableHighAccuracy: true, timeout: 8000 }
+                );
+                return;
+            }
+
+            addPoint(
+                currentPosition.lat,
+                currentPosition.lng,
+                currentPosition.alt,
+                currentPosition.accuracy,
+                'GPS HP'
+            );
+            
+            showToast(`Titik #${points.length} terekam dari GPS HP!`);
+        }
+
+        function addPoint(lat, lng, alt = 0, accuracy = null, source = 'GPS') {
+            const pointObj = {
+                id: Date.now(),
+                number: points.length + 1,
+                lat: parseFloat(lat.toFixed(7)),
+                lng: parseFloat(lng.toFixed(7)),
+                alt: Math.round(alt),
+                accuracy: accuracy,
+                source: source,
+                time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            };
+
+            points.push(pointObj);
+            updateMapAndStats();
+        }
+
+        function removePoint(id) {
+            points = points.filter(p => p.id !== id);
+            points.forEach((p, idx) => p.number = idx + 1); // renumber
+            updateMapAndStats();
+            showToast('Titik berhasil dihapus.');
+        }
+
+        function clearAllPoints() {
+            if (points.length === 0) return;
+            points = [];
+            updateMapAndStats();
+            showToast('Semua titik poligon telah dibersihkan.');
+        }
+
+        function updateMapAndStats() {
+            markersGroup.clearLayers();
+            const latLngs = points.map(p => [p.lat, p.lng]);
+
+            // Redraw Point Markers with Google Earth 3D link in popup
+            points.forEach((p) => {
+                const markerIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div class="bg-blue-600 text-white font-bold text-[10px] w-6 h-6 rounded-full flex items-center justify-center shadow-lg border-2 border-white transform hover:scale-125 transition-all">${p.number}</div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+
+                const marker = L.marker([p.lat, p.lng], { icon: markerIcon }).addTo(markersGroup);
+                
+                // Direct Google Earth Web 3D link
+                const geEarthUrl = `https://earth.google.com/web/@${p.lat},${p.lng},25a,120d,35y,0h,45t,0r`;
+                
+                marker.bindPopup(`
+                    <div class="text-xs space-y-1.5 p-1 max-w-[220px]">
+                        <p class="font-bold text-slate-800 border-b pb-1 flex justify-between items-center">
+                            <span>Titik #${p.number}</span>
+                            <span class="text-[10px] text-slate-400 font-normal">${p.time}</span>
+                        </p>
+                        <p><b>Lat:</b> ${p.lat}</p>
+                        <p><b>Lng:</b> ${p.lng}</p>
+                        ${p.accuracy ? `<p><b>Akurasi GPS:</b> ±${p.accuracy}m</p>` : ''}
+                        
+                        <div class="pt-1 flex flex-col gap-1">
+                            <a href="${geEarthUrl}" target="_blank" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-2 rounded-lg font-semibold text-[10px] text-center flex items-center justify-center gap-1 shadow-sm">
+                                <i class="fa-solid fa-cube text-amber-300"></i> Buka Titik di Google Earth 3D
+                            </a>
+                            <button onclick="removePoint(${p.id})" class="w-full bg-red-50 text-red-600 py-1 rounded-lg font-semibold text-[10px] hover:bg-red-100">
+                                Hapus Titik Ini
+                            </button>
+                        </div>
+                    </div>
+                `);
+            });
+
+            // Update Polyline & Polygon
+            if (points.length > 2) {
+                polylineLayer.setLatLngs([]);
+                polygonLayer.setLatLngs(latLngs);
+            } else {
+                polygonLayer.setLatLngs([]);
+                polylineLayer.setLatLngs(latLngs);
+            }
+
+            // Calculate GIS metrics using Turf.js
+            calculateMetrics();
+
+            // Update Sidebar List
+            renderSidebarPoints();
+
+            // Update badge count
+            const badge = document.getElementById('point-badge');
+            if (points.length > 0) {
+                badge.innerText = points.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function calculateMetrics() {
+            const statPoints = document.getElementById('stat-points');
+            const statArea = document.getElementById('stat-area');
+            const statPerimeter = document.getElementById('stat-perimeter');
+
+            statPoints.innerText = points.length;
+
+            if (points.length < 3) {
+                if (points.length === 2) {
+                    const line = turf.lineString([[points[0].lng, points[0].lat], [points[1].lng, points[1].lat]]);
+                    const lengthMeters = turf.length(line, { units: 'meters' });
+                    statPerimeter.innerText = lengthMeters.toFixed(1) + ' m';
+                } else {
+                    statPerimeter.innerText = '0.00 m';
+                }
+                statArea.innerText = '0.00 Ha';
+                return;
+            }
+
+            // Turf polygon calculations
+            const coords = points.map(p => [p.lng, p.lat]);
+            coords.push([points[0].lng, points[0].lat]); // close loop
+
+            try {
+                const turfPoly = turf.polygon([coords]);
+                const areaSqMeters = turf.area(turfPoly); // m2
+                const areaHectares = areaSqMeters / 10000; // Ha
+                const perimeterMeters = turf.length(turfPoly, { units: 'meters' });
+
+                if (areaHectares < 1) {
+                    statArea.innerText = `${areaSqMeters.toFixed(1)} m² (${areaHectares.toFixed(3)} Ha)`;
+                } else {
+                    statArea.innerText = `${areaHectares.toFixed(2)} Ha`;
+                }
+                statPerimeter.innerText = `${perimeterMeters.toFixed(1)} m`;
+            } catch (err) {
+                console.error("GIS Turf Error:", err);
+            }
+        }
+
+        function launchCurrentInGoogleEarth() {
+            if (points.length === 0) {
+                if (currentPosition) {
+                    // Open user current position in Google Earth 3D
+                    const geUrl = `https://earth.google.com/web/@${currentPosition.lat},${currentPosition.lng},20a,150d,35y,0h,45t,0r`;
+                    window.open(geUrl, '_blank');
+                } else {
+                    showToast('Silakan ambil titik lokasi terlebih dahulu.');
+                }
+                return;
+            }
+
+            // Calculate center of polygon points
+            let sumLat = 0;
+            let sumLng = 0;
+            points.forEach(p => {
+                sumLat += p.lat;
+                sumLng += p.lng;
+            });
+            const centerLat = (sumLat / points.length).toFixed(7);
+            const centerLng = (sumLng / points.length).toFixed(7);
+
+            // Distance based on perimeter
+            const geUrl = `https://earth.google.com/web/@${centerLat},${centerLng},30a,200d,35y,0h,45t,0r`;
+            window.open(geUrl, '_blank');
+        }
+
+        function renderSidebarPoints() {
+            const container = document.getElementById('points-container');
+            const countText = document.getElementById('point-count-text');
+
+            countText.innerText = `${points.length} titik terekam`;
+
+            if (points.length === 0) {
+                container.innerHTML = `
+                    <div id="empty-state" class="text-center py-12 text-slate-400">
+                        <i class="fa-solid fa-map-pin text-3xl mb-2 opacity-40"></i>
+                        <p class="text-xs">Belum ada titik koordinat.</p>
+                        <p class="text-[11px] mt-1 text-slate-400">Gunakan tombol <b>"Ambil Titik (HP)"</b>, cari lokasi rumah, atau ketuk langsung di peta satelit.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = '';
+            points.forEach((p) => {
+                const geEarthUrl = `https://earth.google.com/web/@${p.lat},${p.lng},25a,120d,35y,0h,45t,0r`;
+                const div = document.createElement('div');
+                div.className = 'bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex justify-between items-center text-xs hover:border-blue-300 transition-all shadow-sm';
+                div.innerHTML = `
+                    <div class="flex items-center gap-2.5">
+                        <div class="bg-blue-600 text-white font-bold w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-[11px]">
+                            ${p.number}
+                        </div>
+                        <div>
+                            <div class="font-bold text-slate-800 text-[11px]">${p.lat}, ${p.lng}</div>
+                            <div class="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                <span><i class="fa-regular fa-clock"></i> ${p.time}</span>
+                                ${p.accuracy ? `<span class="bg-emerald-100 text-emerald-700 px-1 py-0.2 rounded font-medium">±${p.accuracy}m</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <a href="${geEarthUrl}" target="_blank" class="text-blue-600 hover:bg-blue-100 p-1.5 rounded-lg transition-colors" title="Buka di Google Earth 3D">
+                            <i class="fa-solid fa-cube text-sm"></i>
+                        </a>
+                        <button onclick="removePoint(${p.id})" class="text-slate-400 hover:text-red-500 p-1.5 transition-colors">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function addManualPointPrompt() {
+            const input = prompt("Masukkan koordinat Latitude, Longitude (contoh: -7.250445, 112.768845):");
+            if (input) {
+                const parts = input.split(',');
+                if (parts.length === 2) {
+                    const lat = parseFloat(parts[0].trim());
+                    const lng = parseFloat(parts[1].trim());
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        addPoint(lat, lng, 0, null, 'Input Manual');
+                        map.setView([lat, lng], 19);
+                    } else {
+                        showToast('Format koordinat tidak valid.');
+                    }
+                } else {
+                    showToast('Gunakan pemisah koma: Latitude, Longitude');
+                }
+            }
+        }
+
+        function openExportModal() {
+            if (points.length < 3) {
+                showToast('Minimal diperlukan 3 titik untuk membentuk poligon KML.');
+                return;
+            }
+            document.getElementById('export-modal').classList.remove('hidden');
+        }
+
+        function closeExportModal() {
+            document.getElementById('export-modal').classList.add('hidden');
+        }
+
+        function hexToKmlColor(hexColor, opacityHex = 'cc') {
+            const cleanHex = hexColor.replace('#', '');
+            const r = cleanHex.substring(0, 2);
+            const g = cleanHex.substring(2, 4);
+            const b = cleanHex.substring(4, 6);
+            return `${opacityHex}${b}${g}${r}`;
+        }
+
+        function exportToKML() {
+            if (points.length < 3) {
+                showToast('Diperlukan minimal 3 titik untuk membuat Poligon KML.');
+                return;
+            }
+
+            const polyName = document.getElementById('kml-name').value || 'Poligon Pemetaan Lahan';
+            const polyDesc = document.getElementById('kml-desc').value || 'Dibuat dengan Google Earth Mapper';
+            const lineColor = document.getElementById('kml-line-color').value;
+            const fillColor = document.getElementById('kml-fill-color').value;
+
+            const kmlLineColor = hexToKmlColor(lineColor, 'ff');
+            const kmlFillColor = hexToKmlColor(fillColor, '7f');
+
+            let coordString = points.map(p => `${p.lng},${p.lat},${p.alt}`).join('\n                    ');
+            coordString += `\n                    ${points[0].lng},${points[0].lat},${points[0].alt}`;
+
+            let pointPlacemarks = points.map(p => `
+            <Placemark>
+                <name>Titik #${p.number}</name>
+                <description>
+                    <![CDATA[
+                        <b>Latitude:</b> ${p.lat}<br/>
+                        <b>Longitude:</b> ${p.lng}<br/>
+                        <b>Waktu Rekam:</b> ${p.time}<br/>
+                        ${p.accuracy ? `<b>Akurasi GPS:</b> ±${p.accuracy}m` : ''}
+                    ]]>
+                </description>
+                <Point>
+                    <coordinates>${p.lng},${p.lat},${p.alt}</coordinates>
+                </Point>
+            </Placemark>`).join('');
+
+            const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${escapeXml(polyName)}</name>
+    <description>${escapeXml(polyDesc)}</description>
+
+    <Style id="polyStyle">
+      <LineStyle>
+        <color>${kmlLineColor}</color>
+        <width>3</width>
+      </LineStyle>
+      <PolyStyle>
+        <color>${kmlFillColor}</color>
+      </PolyStyle>
+    </Style>
+
+    <Placemark>
+      <name>${escapeXml(polyName)}</name>
+      <styleUrl>#polyStyle</styleUrl>
+      <Polygon>
+        <extrude>1</extrude>
+        <altitudeMode>clampToGround</altitudeMode>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+                    ${coordString}
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+
+    <Folder>
+      <name>Titik-Titik Koordinat</name>
+      ${pointPlacemarks}
+    </Folder>
+  </Document>
+</kml>`;
+
+            downloadFile(kmlContent, `${polyName.toLowerCase().replace(/\s+/g, '_')}_google_earth.kml`, 'application/vnd.google-earth.kml+xml');
+            closeExportModal();
+            showToast('File KML berhasil diunduh! Siap dibuka di Google Earth.');
+        }
+
+        function exportToGeoJSON() {
+            if (points.length < 3) {
+                showToast('Diperlukan minimal 3 titik untuk GeoJSON.');
+                return;
+            }
+
+            const coords = points.map(p => [p.lng, p.lat]);
+            coords.push([points[0].lng, points[0].lat]);
+
+            const geojson = {
+                type: "FeatureCollection",
+                features: [
+                    {
+                        type: "Feature",
+                        properties: {
+                            name: document.getElementById('kml-name')?.value || "Poligon GPS",
+                            total_points: points.length,
+                            area: document.getElementById('stat-area').innerText,
+                            perimeter: document.getElementById('stat-perimeter').innerText
+                        },
+                        geometry: {
+                            type: "Polygon",
+                            coordinates: [coords]
+                        }
+                    }
+                ]
+            };
+
+            downloadFile(JSON.stringify(geojson, null, 2), "poligon_pemetaan.geojson", "application/json");
+            showToast('File GeoJSON berhasil diunduh.');
+        }
+
+        function downloadFile(content, fileName, contentType) {
+            const blob = new Blob([content], { type: contentType });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function escapeXml(unsafe) {
+            return unsafe.replace(/[<>&'"]/g, function (c) {
+                switch (c) {
+                    case '<': return '&lt;';
+                    case '>': return '&gt;';
+                    case '&': return '&amp;';
+                    case '\'': return '&apos;';
+                    case '"': return '&quot;';
+                }
+            });
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('translate-x-full');
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.innerText = message;
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3500);
+        }
+    </script>
+</body>
+</html>
