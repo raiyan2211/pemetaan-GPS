@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistem Pemetaan Poligon & Google Earth 3D</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <!-- External CSS -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header>
+    <h1><i class="fa-solid fa-map-location-dot"></i> Pemetaan Poligon & Google Earth 3D</h1>
+  </header>
+
+  <div class="main-container">
+    <div class="sidebar">
+      <!-- Panel Cari Alamat -->
+      <div class="panel-section">
+        <div class="panel-title"><i class="fa-solid fa-magnifying-glass"></i> Cari Rumah / Alamat</div>
+        <div class="search-box">
+          <input type="text" id="address-input" placeholder="Nama jalan, kota, atau perumahan..." onkeypress="if(event.key==='Enter') searchAddress()">
+          <button class="btn btn-primary" onclick="searchAddress()"><i class="fa-solid fa-search"></i></button>
+        </div>
+      </div>
+
+      <!-- Panel Pengambilan GPS -->
+      <div class="panel-section">
+        <div class="panel-title"><i class="fa-solid fa-crosshairs"></i> Pengambilan Koordinat</div>
+        <button class="btn btn-success btn-block" style="margin-bottom: 8px;" onclick="getGPSLocation()">
+          <i class="fa-solid fa-location-arrow"></i> Ambil Titik dari HP (GPS)
+        </button>
+        <p style="font-size: 0.75rem; color: #64748b; text-align: center;">Atau ketuk langsung pada peta untuk menambah titik sudut bangunan/lahan.</p>
+      </div>
+
+      <!-- Panel Hasil Pengukuran Area -->
+      <div class="panel-section">
+        <div class="panel-title"><i class="fa-solid fa-chart-area"></i> Hasil Pengukuran Area</div>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="val" id="area-val">0</div>
+            <div class="lbl">Luas (m²)</div>
+          </div>
+          <div class="metric-card">
+            <div class="val" id="area-ha-val">0</div>
+            <div class="lbl">Luas (Hektar)</div>
+          </div>
+        </div>
+        <div class="metrics-grid" style="grid-template-columns: 1fr;">
+          <div class="metric-card">
+            <div class="val" id="perimeter-val">0 m</div>
+            <div class="lbl">Keliling Lahan</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel Daftar Titik Poligon -->
+      <div class="panel-section" style="flex:1;">
+        <div class="panel-title" style="justify-content: space-between;">
+          <span><i class="fa-solid fa-list-ol"></i> Daftar Titik Poligon</span>
+          <button class="btn btn-danger" style="padding: 2px 6px; font-size: 0.7rem;" onclick="clearAllPoints()">Hapus Semua</button>
+        </div>
+        <div class="point-list" id="point-list-container">
+          <div id="empty-state" style="padding: 15px; text-align: center; color: #94a3b8; font-size: 0.8rem;">Belum ada titik koordinat</div>
+        </div>
+      </div>
+
+      <!-- Panel Google Earth & Export -->
+      <div class="panel-section">
+        <button class="btn btn-earth btn-block" style="margin-bottom: 8px;" onclick="openInGoogleEarth()">
+          <i class="fa-solid fa-earth-americas"></i> Buka Lokasi Ini di Google Earth 3D
+        </button>
+        <button class="btn btn-secondary btn-block" onclick="exportKML()">
+          <i class="fa-solid fa-file-code"></i> Unduh File KML untuk Google Earth
+        </button>
+      </div>
+    </div>
+
+    <!-- Map View -->
+    <div id="map"></div>
+  </div>
+
+  <!-- Leaflet JS & Turf.js -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/turf@6/turf.min.js"></script>
+
+  <!-- Firebase SDK v8 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <!-- External JS Script -->
+  <script src="script.js"></script>
+</body>
+</html>
